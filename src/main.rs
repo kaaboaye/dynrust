@@ -1,7 +1,11 @@
+#![feature(rustc_private)]
+#![feature(link_args)]
+
 #[macro_use]
 extern crate lazy_static;
 extern crate ctrlc;
 extern crate libloading as lib;
+extern crate rustc_driver;
 
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -73,6 +77,8 @@ fn code_gen(
 
     let code = format!(
         r###"
+            #![no_std]
+
             type Stream = Box<dyn Iterator<Item = f64>>;
 
             #[no_mangle]
@@ -87,23 +93,29 @@ fn code_gen(
     file.write_all(code.as_bytes())?;
     drop(file);
 
-    let compilation_result = Command::new("rustc")
-        .arg("--crate-type=dylib")
-        .arg(src_path)
-        .arg("-o")
-        .arg(lib_path.as_str())
-        .output()?;
+    let args = vec![
+        String::from("--crate-type=dylib"),
+        src_path,
+        String::from("-o"),
+        lib_path.clone(),
+    ];
 
-    if compilation_result.status.code().unwrap_or_default() != 0 {
-        println!(
-            "Compilation result {}\n{}\n{}",
-            compilation_result.status,
-            std::str::from_utf8(compilation_result.stdout.as_slice()).unwrap(),
-            std::str::from_utf8(compilation_result.stderr.as_slice()).unwrap()
-        );
-    }
+    let mut callbacks = rustc_driver::TimePassesCallbacks::default();
+    let compilation_result =
+        rustc_driver::run_compiler(args.as_slice(), &mut callbacks, None, None);
 
-    drop(compilation_result);
+    dbg!(compilation_result);
+
+    // if compilation_result.status.code().unwrap_or_default() != 0 {
+    //     println!(
+    //         "Compilation result {}\n{}\n{}",
+    //         compilation_result.status,
+    //         std::str::from_utf8(compilation_result.stdout.as_slice()).unwrap(),
+    //         std::str::from_utf8(compilation_result.stderr.as_slice()).unwrap()
+    //     );
+    // }
+
+    // drop(compilation_result);
 
     let lib = Box::new(lib::Library::new(lib_path)?);
 
